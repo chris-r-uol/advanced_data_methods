@@ -1,0 +1,260 @@
+---
+title: "Advanced Data Science Methods in R"
+autor: "Chris Rushton"
+date: "2025-05-06"
+format:
+  gfm:
+    toc: false
+execute:
+  echo: true
+---
+
+
+# Introduction
+
+This document guides the user through the material presented in the Advanced Data Science Methods lecture.
+
+# Prophet
+
+This section demonstrates the usage of Prophet as a tool for analysing air pollution data
+
+## Package Loading
+
+We begin by loading the packages for Prophet.
+
+``` {r, results='hide', message=FALSE, warning=FALSE}
+library(openair)
+library(ggplot2)
+library(prophet)
+library(dplyr)
+```
+
+## Load the Data
+
+We start by loading the data. We will use the `openair` package to import the AURN data for the site MY1.
+
+The data set used is from from 2017 to 2025 which gives a stable baseline as well as showing the impact of COVID 19 lock-downs.
+
+We also need to rename the columns because Prophet expects the date column to be ds and the measurement column to be y. This is not optional.
+
+``` {r}
+my1 = openair::importAURN(site = "MY1", year = 2017:2025)
+
+df <- my1 %>% 
+  rename(ds = date, y = no2)
+  
+```
+
+## Make a Model
+
+We now need to make a model that we will call `m`. We also make a future dataframe `future` that will contain the data for our predictions. We specify the length of the data frame in this case \~2 years or 730 days.
+
+``` {r}
+m <- prophet(df)
+
+future <- make_future_dataframe(m, periods = (730))
+```
+
+## Make a Forecast
+
+We can now use the `predict` function to make a forecast. The `predict` function takes the model and the future data frame as arguments. The result is a data frame with the forecasted values.
+
+```{r}
+forecast <- predict(m, future)
+```
+
+## Plot the Results
+
+We can now create a visualisation of our predictions.
+
+```{r}
+p = plot(m, forecast) + ggtitle("NO2 Forecast for the Next 2 Years")
+print(p)
+```
+
+We can also look at the decomposition of the time series in various time periods.
+
+```{r}
+components = prophet_plot_components(m, forecast)
+print(components)
+```
+
+# Big Data Concepts
+
+## Regression
+
+We will now go through regression using the `caret` package.
+
+```{r}
+library(caret)
+```
+
+We will use the `cars` data set which is built into R. This is a test data set used for demonstrating processes like this. We will also `set.seed` to ensure that the results are repeatable.
+
+```{r}
+data(mtcars)
+set.seed(42)
+```
+
+We will now set up our training data set of 70% of the data and our test data with the other 30%.
+
+```{r}
+train_index <- createDataPartition(mtcars$mpg, p = 0.7, list = FALSE)
+train_data <- mtcars[train_index, ]
+test_data  <- mtcars[-train_index, ]
+```
+
+We can now train a model using our training data set
+
+```{r}
+model_reg <- train(mpg ~ ., data = train_data, method = "lm")
+```
+
+We can now test our model using the `test_data` dataset that we kept from the analysis.
+
+We can make some assessment of the quality of the model using the root mean squared error `rmse` of our data
+
+```{r}
+pred_reg <- predict(model_reg, test_data)
+rmse <- sqrt(mean((pred_reg - test_data$mpg)^2))
+cat("Test RMSE:", round(rmse, 2), "\n")
+```
+
+We can visualise the results to get a better understanding of what's going on.
+
+```{r}
+r = results <- data.frame(
+  actual = test_data$mpg,
+  predicted = pred_reg,
+  residuals = test_data$mpg - pred_reg
+)
+
+p = ggplot(results, aes(x = actual, y = predicted)) +
+     geom_point(color = "blue", size = 3) +
+     geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+     labs(title = "Actual vs. Predicted MPG",
+       x = "Actual MPG",
+       y = "Predicted MPG") +
+     theme_bw()
+
+print(p)
+```
+
+## Classification
+
+We can use the `iris` data set to demonstrate classification. The `iris` data set is a built-in data set in R that contains measurements of different species of iris flowers.
+
+This data set is categorical so using regression is not appropriate.
+
+We will add the `rpart.plot` package for plotting later.
+
+```{r}
+library(rpart.plot)
+```
+
+We start by loading the data as before. Again we set the seed for consistency.
+
+```{r}
+data(iris)
+set.seed(42)
+```
+
+We will create a training and test data set as before.
+
+```{r}
+train_index <- createDataPartition(iris$Species, p = 0.7, list = FALSE)
+train_data <- iris[train_index, ]
+test_data  <- iris[-train_index, ]
+```
+
+We can now train the data.
+
+```{r}
+model_class <- train(Species ~ ., data = train_data, method = "rpart")
+```
+
+We can make our predictions using the `test_data` set as before but we will now create a confusion matrix to visualise our results rather than use a linear regression plot.
+
+```{r}
+pred_class <- predict(model_class, test_data)
+conf_matrix <- confusionMatrix(pred_class, test_data$Species)
+print(conf_matrix)
+conf_df <- as.data.frame(conf_matrix$table)
+```
+
+We may want to make this output a bit nicer so we can use the `heatmap` option in `ggplot2` to do this.
+
+```{r}
+ggplot(conf_df, aes(x = Prediction, y = Reference, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), color = "black", size = 5) +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  labs(title = "Confusion Matrix Heatmap", x = "Predicted Label", y = "Actual Label") +
+  theme_minimal()
+```
+
+We can also visualise the decision tree.
+
+```{r}
+rpart.plot(model_class$finalModel, 
+           main = "Decision Tree for Iris Classification",
+           extra = 104)
+
+importance <- varImp(model_class)
+print(importance)
+
+# Plot variable importance
+plot(importance, main = "Variable Importance")
+```
+
+## Zero Shot Classification
+
+Achieving Zero-Shot classification in R is a bit more complicated and we will need to link R to python to do this. We can do this using the `reticulate` package.
+
+```{r}
+library(reticulate)
+```
+
+We are now going to try and load some python packages, `transformers` and `torch`. These are the building blocks of LLMs in Python and don't have readily accessible R alternatives.
+
+We won't let that stop us though!
+
+```{r}
+py_install("transformers", pip=TRUE)
+py_install("torch", pip=TRUE)
+
+py_require("transformers")
+py_require("torch")
+
+transformers <- import("transformers")
+torch <- import("torch")
+
+py_config()
+```
+
+We can now create a pipeline for performing the zero-shot analysis.
+
+A pipeline is a previously constructed method for solving a specific problem. If you want to go into more depth on this topic you may want to look at <https://huggingface.co>. You will probably also need to get familiar with Python. More details are beyond the scope of this lecture.
+
+```{r}
+classifier <- transformers$pipeline(
+  "zero-shot-classification",
+  model = "facebook/bart-large-mnli",
+  framework='pt'
+)
+```
+
+We can now classify a `sequence` of words based on our `candidate_labels`.
+
+Note that we don't need to rely on anything other than our chosen candidate labels.
+
+```{r}
+sequence <- "The economy is experiencing rapid growth and innovation."
+candidate_labels <- c("economics", "politics", "technology", "sports")
+
+# Perform zero-shot classification
+result <- classifier(sequence, candidate_labels)
+
+# Print the result
+print(result)
+```
