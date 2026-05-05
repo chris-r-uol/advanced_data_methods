@@ -26,20 +26,27 @@ codes <- c(
   sheffield = "03N",
   rotherham = "03L",
   fareham = "D9Y0V",
-  tyneside = "13T"
+  tyneside = "13T",
+  north_central_london = "93C"
 )
 
 # We need to create a python virtual environment to run the cloudscraper package
 
-virtualenv_create("openprescribing-r")
+virtualenv_create("openprescribing-r-2")
 
 virtualenv_install(
-  envname = "openprescribing-r",
-  packages = "cloudscraper",
-  pip = TRUE
+  envname = "openprescribing-r-2",
+  packages = "cloudscraper"
 )
 
+
+use_virtualenv("openprescribing-r-2", required = TRUE)
+
 py_module_available("cloudscraper")
+
+if (!py_module_available("cloudscraper")) {
+  stop("Python module 'cloudscraper' is not available in the selected reticulate environment.")
+}
 
 
 get_openprescribe_data <- function(la_code, measure, cleaned = TRUE) {
@@ -112,7 +119,7 @@ get_openprescribe_data <- function(la_code, measure, cleaned = TRUE) {
 
 get_openprescribe_metadata <- function(la_code) {
   
-
+  
   la_code <- tolower(la_code)
   
   if (!la_code %in% names(codes)) {
@@ -172,5 +179,39 @@ get_openprescribe_metadata <- function(la_code) {
   gdf
 }
 
+read_openprescribing <- function(url) {
+  cloudscraper <- reticulate::import("cloudscraper")
+  
+  scraper <- cloudscraper$create_scraper(
+    browser = reticulate::dict(
+      browser = "chrome",
+      platform = "windows",
+      desktop = TRUE
+    )
+  )
+  
+  response <- scraper$get(
+    url,
+    headers = reticulate::dict(
+      Accept = "application/json",
+      `User-Agent` = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    )
+  )
+  
+  if (response$status_code >= 400) {
+    stop(
+      "Error fetching OpenPrescribing URL. HTTP status: ",
+      response$status_code,
+      "\nURL: ",
+      url,
+      "\nResponse body:\n",
+      substr(response$text, 1, 1000)
+    )
+  }
+  
+  response$text
+}
+# Test the helpers work
 
 metadata <- get_openprescribe_metadata("leeds")
+saba <- get_openprescribe_data("leeds", "saba")
